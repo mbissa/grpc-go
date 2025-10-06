@@ -46,6 +46,16 @@ func GetXDSHandshakeClusterName(attr *attributes.Attributes) (string, bool) {
 	return name, ok
 }
 
+// GetXDSClusterName returns the cluster name stored in the address attributes.
+func GetXDSClusterName(addr resolver.Address) (string, bool) {
+	if addr.Attributes == nil {
+		return "", false
+	}
+	v := addr.Attributes.Value(handshakeClusterNameKey{})
+	name, ok := v.(string)
+	return name, ok
+}
+
 // LocalityString generates a string representation of clients.Locality in the
 // format specified in gRFC A76.
 func LocalityString(l clients.Locality) string {
