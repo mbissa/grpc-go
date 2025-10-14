@@ -35,6 +35,7 @@ import (
 	"google.golang.org/grpc/balancer/pickfirst"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
+	expstats "google.golang.org/grpc/experimental/stats"
 	"google.golang.org/grpc/internal"
 	"google.golang.org/grpc/internal/channelz"
 	"google.golang.org/grpc/internal/grpcsync"
@@ -95,6 +96,41 @@ var (
 	// security information (e.g., OAuth2 token) which requires secure
 	// connection on an insecure connection.
 	errTransportCredentialsMissing = errors.New("grpc: the credentials require transport level security (use grpc.WithTransportCredentials() to set)")
+)
+
+var (
+	disconnectionsMetric = expstats.RegisterInt64Count(expstats.MetricDescriptor{
+		Name:           "grpc.subchannel.disconnections",
+		Description:    "EXPERIMENTAL. Number of times the selected subchannel becomes disconnected.",
+		Unit:           "{disconnection}",
+		Labels:         []string{"grpc.target"},
+		OptionalLabels: []string{"grpc.lb.backend_service", "grpc.lb.locality", "grpc.disconnect_error"},
+		Default:        false,
+	})
+	connectionAttemptsSucceededMetric = expstats.RegisterInt64Count(expstats.MetricDescriptor{
+		Name:           "grpc.subchannel.connection_attempts_succeeded",
+		Description:    "EXPERIMENTAL. Number of successful connection attempts.",
+		Unit:           "{attempt}",
+		Labels:         []string{"grpc.target"},
+		OptionalLabels: []string{"grpc.lb.backend_service", "grpc.lb.locality"},
+		Default:        false,
+	})
+	connectionAttemptsFailedMetric = expstats.RegisterInt64Count(expstats.MetricDescriptor{
+		Name:           "grpc.subchannel.connection_attempts_failed",
+		Description:    "EXPERIMENTAL. Number of failed connection attempts.",
+		Unit:           "{attempt}",
+		Labels:         []string{"grpc.target"},
+		OptionalLabels: []string{"grpc.lb.backend_service", "grpc.lb.locality"},
+		Default:        false,
+	})
+	openConnectionsMetric = expstats.RegisterInt64UpDownCount(expstats.MetricDescriptor{
+		Name:           "grpc.subchannel.open_connections",
+		Description:    "EXPERIMENTAL. Number of open connections.",
+		Unit:           "{attempt}",
+		Labels:         []string{"grpc.target"},
+		OptionalLabels: []string{"grpc.security_level", "grpc.lb.locality"},
+		Default:        false,
+	})
 )
 
 const (
@@ -1220,6 +1256,9 @@ func (ac *addrConn) updateConnectivityState(s connectivity.State, lastErr error)
 	if ac.state == s {
 		return
 	}
+	if ac.state == connectivity.Ready || (ac.state == connectivity.Connecting && s == connectivity.Idle) {
+		disconnectionsMetric.Record(ac.cc.metricsRecorderList, 1, ac.cc.target, "")
+	}
 	ac.state = s
 	ac.channelz.ChannelMetrics.State.Store(&s)
 	if lastErr == nil {
@@ -1277,6 +1316,7 @@ func (ac *addrConn) resetTransportAndUnlock() {
 	ac.mu.Unlock()
 
 	if err := ac.tryAllAddrs(acCtx, addrs, connectDeadline); err != nil {
+		connectionAttemptsFailedMetric.Record(ac.cc.balancerWrapper.MetricsRecorder(), 1, ac.cc.target, "", "")
 		// TODO: #7534 - Move re-resolution requests into the pick_first LB policy
 		// to ensure one resolution request per pass instead of per subconn failure.
 		ac.cc.resolveNow(resolver.ResolveNowOptions{})
@@ -1315,6 +1355,7 @@ func (ac *addrConn) resetTransportAndUnlock() {
 		return
 	}
 	// Success; reset backoff.
+	connectionAttemptsSucceededMetric.Record(ac.cc.balancerWrapper.MetricsRecorder(), 1, ac.cc.target)
 	ac.mu.Lock()
 	ac.backoffIdx = 0
 	ac.mu.Unlock()

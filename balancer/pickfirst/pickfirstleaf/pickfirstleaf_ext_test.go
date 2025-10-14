@@ -954,6 +954,9 @@ func (s) TestPickFirstLeaf_HappyEyeballs_TF_AfterEndOfList(t *testing.T) {
 	if got, _ := tmr.Metric("grpc.lb.pick_first.connection_attempts_succeeded"); got != 0 {
 		t.Errorf("Unexpected data for metric %v, got: %v, want: %v", "grpc.lb.pick_first.connection_attempts_succeeded", got, 0)
 	}
+	if got, _ := tmr.Metric("grpc.subchannel.connection_attempts_failed"); got != 1 {
+		t.Errorf("Unexpected data for metric %v, got: %v, want: %v", "grpc.lb.pick_first.grpc.subchannel.connection_attempts_failed", got, 1)
+	}
 	if got, _ := tmr.Metric("grpc.lb.pick_first.connection_attempts_failed"); got != 1 {
 		t.Errorf("Unexpected data for metric %v, got: %v, want: %v", "grpc.lb.pick_first.connection_attempts_failed", got, 1)
 	}
