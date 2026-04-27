@@ -2246,11 +2246,15 @@ func (s) TestRelayContextCollisionMetrics(t *testing.T) {
 		t.Fatalf("Unexpected UnaryCall error: %v", err)
 	}
 
-	// Verify Server Metric Identity is retained
-	checkMetricWithMethod(ctx, t, relayMetricsReader, "grpc.server.call.started", "grpc.testing.TestService/UnaryCall")
+	// Verify Server Metric Identity is retained.
+	if err := checkMetricWithMethod(ctx, relayMetricsReader, "grpc.server.call.started", "grpc.testing.TestService/UnaryCall"); err != nil {
+		t.Fatal(err)
+	}
 
-	// Verify Client Metric Identity correctly resolved to "other"
-	checkMetricWithMethod(ctx, t, relayMetricsReader, "grpc.client.attempt.started", "other")
+	// Verify Client Metric Identity correctly resolved to "other".
+	if err := checkMetricWithMethod(ctx, relayMetricsReader, "grpc.client.attempt.started", "other"); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestRelayContextCollisionTracing verifies that span context is correctly
@@ -2322,17 +2326,16 @@ func (s) TestRelayContextCollisionTracing(t *testing.T) {
 
 // checkMetricWithMethod verifies that a metric with the specified name contains
 // a data point matching the target grpc.method. It does not poll.
-func checkMetricWithMethod(ctx context.Context, t *testing.T, reader *metric.ManualReader, metricName, method string) {
-	t.Helper()
+func checkMetricWithMethod(ctx context.Context, reader *metric.ManualReader, metricName, method string) error {
 	metrics := metricsDataFromReader(ctx, reader)
 	if m, ok := metrics[metricName]; ok {
 		if sum, ok := m.Data.(metricdata.Sum[int64]); ok {
 			for _, dp := range sum.DataPoints {
 				if val, ok := dp.Attributes.Value("grpc.method"); ok && val.AsString() == method {
-					return // Found
+					return nil
 				}
 			}
 		}
 	}
-	t.Errorf("Metric %q with method %q not found", metricName, method)
+	return fmt.Errorf("metric %q with method %q not found", metricName, method)
 }
