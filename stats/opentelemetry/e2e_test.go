@@ -2211,13 +2211,16 @@ func runDisconnectScenario(t *testing.T, name, wantLabel string, action func(*st
 func (s) TestRelayContextCollisionMetrics(t *testing.T) {
 	backendMetricsOpts, _ := defaultMetricsOptions(t, nil)
 	backendServer := setupStubServer(t, backendMetricsOpts, nil)
+	backendServer.EmptyCallF = func(_ context.Context, _ *testpb.Empty) (*testpb.Empty, error) {
+		return nil, status.Error(codes.Unimplemented, "EmptyCall not implemented")
+	}
 	defer backendServer.Stop()
 
 	relayMetricsOpts, relayMetricsReader := defaultMetricsOptions(t, nil)
 	otelOpts := opentelemetry.Options{MetricsOptions: *relayMetricsOpts}
 
 	relayServer := &stubserver.StubServer{
-		UnaryCallF: func(ctx context.Context, in *testpb.SimpleRequest) (*testpb.SimpleResponse, error) {
+		UnaryCallF: func(ctx context.Context, _ *testpb.SimpleRequest) (*testpb.SimpleResponse, error) {
 			relayCC, err := grpc.NewClient(
 				backendServer.Address,
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -2227,7 +2230,8 @@ func (s) TestRelayContextCollisionMetrics(t *testing.T) {
 				return nil, fmt.Errorf("failed to create relay client: %v", err)
 			}
 			defer relayCC.Close()
-			err = relayCC.Invoke(ctx, "/grpc.testing.TestService/UnregisteredCall", in, &testpb.SimpleResponse{})
+			client := testpb.NewTestServiceClient(relayCC)
+			_, err = client.EmptyCall(ctx, &testpb.Empty{})
 			if status.Code(err) != codes.Unimplemented {
 				t.Errorf("Expected Unimplemented error, got: %v", err)
 			}
@@ -2251,8 +2255,8 @@ func (s) TestRelayContextCollisionMetrics(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Verify Client Metric Identity correctly resolved to "other".
-	if err := checkMetricWithMethod(ctx, relayMetricsReader, "grpc.client.attempt.started", "other"); err != nil {
+	// Verify Client Metric Identity correctly resolved to "grpc.testing.TestService/EmptyCall".
+	if err := checkMetricWithMethod(ctx, relayMetricsReader, "grpc.client.attempt.started", "grpc.testing.TestService/EmptyCall"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -2264,13 +2268,16 @@ func (s) TestRelayContextCollisionMetrics(t *testing.T) {
 func (s) TestRelayContextCollisionTracing(t *testing.T) {
 	backendTraceOpts, _ := defaultTraceOptions(t)
 	backendServer := setupStubServer(t, nil, backendTraceOpts)
+	backendServer.EmptyCallF = func(_ context.Context, _ *testpb.Empty) (*testpb.Empty, error) {
+		return nil, status.Error(codes.Unimplemented, "EmptyCall not implemented")
+	}
 	defer backendServer.Stop()
 
 	relayTraceOpts, relayTraceExporter := defaultTraceOptions(t)
 	otelOpts := opentelemetry.Options{TraceOptions: *relayTraceOpts}
 
 	relayServer := &stubserver.StubServer{
-		UnaryCallF: func(ctx context.Context, in *testpb.SimpleRequest) (*testpb.SimpleResponse, error) {
+		UnaryCallF: func(ctx context.Context, _ *testpb.SimpleRequest) (*testpb.SimpleResponse, error) {
 			relayCC, err := grpc.NewClient(
 				backendServer.Address,
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -2280,7 +2287,8 @@ func (s) TestRelayContextCollisionTracing(t *testing.T) {
 				return nil, fmt.Errorf("failed to create relay client: %v", err)
 			}
 			defer relayCC.Close()
-			err = relayCC.Invoke(ctx, "/grpc.testing.TestService/UnregisteredCall", in, &testpb.SimpleResponse{})
+			client := testpb.NewTestServiceClient(relayCC)
+			_, err = client.EmptyCall(ctx, &testpb.Empty{})
 			if status.Code(err) != codes.Unimplemented {
 				t.Errorf("Expected Unimplemented error, got: %v", err)
 			}
@@ -2299,7 +2307,7 @@ func (s) TestRelayContextCollisionTracing(t *testing.T) {
 
 	wantSpans := []traceSpanInfo{
 		{name: "Recv.", spanKind: "server"},
-		{name: "Sent.grpc.testing.TestService.UnregisteredCall", spanKind: "client"},
+		{name: "Sent.grpc.testing.TestService.EmptyCall", spanKind: "client"},
 	}
 	spans, err := waitForTraceSpans(ctx, relayTraceExporter, wantSpans)
 	if err != nil {
@@ -2311,7 +2319,7 @@ func (s) TestRelayContextCollisionTracing(t *testing.T) {
 		if span.Name == "Recv." && span.SpanKind == oteltrace.SpanKindServer {
 			srvTraceID = span.SpanContext.TraceID()
 		}
-		if span.Name == "Sent.grpc.testing.TestService.UnregisteredCall" && span.SpanKind == oteltrace.SpanKindClient {
+		if span.Name == "Sent.grpc.testing.TestService.EmptyCall" && span.SpanKind == oteltrace.SpanKindClient {
 			cliTraceID = span.SpanContext.TraceID()
 		}
 	}
