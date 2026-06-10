@@ -25,8 +25,17 @@ import (
 
 	"google.golang.org/grpc"
 	iresolver "google.golang.org/grpc/internal/resolver"
+	"google.golang.org/grpc/internal/xds/bootstrap"
 	"google.golang.org/protobuf/proto"
 )
+
+// XDSClient represents the xDS client capabilities required by HTTP filters.
+type XDSClient interface {
+	// CreateChannel returns a gRPC client connection to the service target.
+	// The XDSClient manages the lifecycle (sharing and reference counting) of
+	// the connection.
+	CreateChannel(targetURI string, creds bootstrap.ChannelCreds) (grpc.ClientConnInterface, func() error, error)
+}
 
 // FilterConfig represents an opaque data structure holding configuration for a
 // filter.  Embed this interface to implement it.
@@ -92,6 +101,14 @@ type ClientInterceptor interface {
 type ClientFilterBuilder interface {
 	// BuildClientFilter constructs a ClientFilter.
 	BuildClientFilter() ClientFilter
+}
+
+// ClientFilterBuilderWithXDSClient is an optional interface that a Builder can
+// implement to indicate its capability to build client-side filters using the
+// xDS client.
+type ClientFilterBuilderWithXDSClient interface {
+	// BuildClientFilter constructs a ClientFilter.
+	BuildClientFilter(cl XDSClient) ClientFilter
 }
 
 // ClientFilter represents the actual filter implementation on the client side.
