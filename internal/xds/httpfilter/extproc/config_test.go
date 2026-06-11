@@ -30,10 +30,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/internal/grpctest"
 	"google.golang.org/grpc/internal/optional"
+	"google.golang.org/grpc/internal/xds/bootstrap"
 	"google.golang.org/grpc/internal/xds/httpfilter"
 	"google.golang.org/grpc/internal/xds/matcher"
 	"google.golang.org/grpc/internal/xds/xdsclient/xdsresource"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -126,7 +126,7 @@ func (s) TestParseFilterConfig_Success(t *testing.T) {
 			wantCfg: baseConfig{
 				server: xdsresource.GRPCServiceConfig{
 					TargetURI:          "localhost:1234",
-					ChannelCredentials: "",
+					ChannelCredentials: bootstrap.ChannelCreds{},
 				},
 				processingModes: processingModes{
 					requestHeaderMode:   modeSend,
@@ -160,7 +160,7 @@ func (s) TestParseFilterConfig_Success(t *testing.T) {
 			wantCfg: baseConfig{
 				server: xdsresource.GRPCServiceConfig{
 					TargetURI:          "localhost:1234",
-					ChannelCredentials: "",
+					ChannelCredentials: bootstrap.ChannelCreds{},
 				},
 				processingModes: processingModes{
 					requestHeaderMode:   modeSend,
@@ -195,7 +195,7 @@ func (s) TestParseFilterConfig_Success(t *testing.T) {
 			wantCfg: baseConfig{
 				server: xdsresource.GRPCServiceConfig{
 					TargetURI:          "localhost:1234",
-					ChannelCredentials: "",
+					ChannelCredentials: bootstrap.ChannelCreds{},
 				},
 				processingModes: processingModes{
 					requestHeaderMode:   modeSend,
@@ -554,9 +554,9 @@ func (s) TestBuildClientInterceptor_Success(t *testing.T) {
 				},
 				server: xdsresource.GRPCServiceConfig{
 					TargetURI:          testBaseURI,
-					ChannelCredentials: "test-channel-creds",
+					ChannelCredentials: bootstrap.ChannelCreds{Type: "test-channel-creds"},
 					CallCredentials:    "test-call-creds",
-					InitialMetadata:    metadata.MD(metadata.Pairs("key1", "value1")),
+					InitialMetadata:    `[{"key":"key1","value":"value1"}]`,
 					Timeout:            5 * time.Second,
 				},
 				mutationRules: httpfilter.HeaderMutationRules{
@@ -589,9 +589,9 @@ func (s) TestBuildClientInterceptor_Success(t *testing.T) {
 				},
 				server: xdsresource.GRPCServiceConfig{
 					TargetURI:          testBaseURI,
-					ChannelCredentials: "test-channel-creds",
+					ChannelCredentials: bootstrap.ChannelCreds{Type: "test-channel-creds"},
 					CallCredentials:    "test-call-creds",
-					InitialMetadata:    metadata.MD(metadata.Pairs("key1", "value1")),
+					InitialMetadata:    `[{"key":"key1","value":"value1"}]`,
 					Timeout:            5 * time.Second,
 				},
 				allowedHeaders: []matcher.StringMatcher{matcher.NewExactStringMatcher("allow-header", false)},
@@ -615,7 +615,7 @@ func (s) TestBuildClientInterceptor_Success(t *testing.T) {
 				server: xdsresource.GRPCServiceConfig{
 					TargetURI:       testBaseURI,
 					Timeout:         time.Second,
-					InitialMetadata: metadata.MD(metadata.Pairs("key1", "value1")),
+					InitialMetadata: `[{"key":"key1","value":"value1"}]`,
 				},
 				mutationRules: httpfilter.HeaderMutationRules{
 					AllowExpr:       regexp.MustCompile("^(?:allow-.*)$"),
@@ -688,7 +688,7 @@ func (s) TestBuildClientInterceptor_Success(t *testing.T) {
 				server: xdsresource.GRPCServiceConfig{
 					TargetURI:       testBaseURI,
 					Timeout:         time.Second,
-					InitialMetadata: metadata.MD(metadata.Pairs("key1", "value1")),
+					InitialMetadata: `[{"key":"key1","value":"value1"}]`,
 				},
 				mutationRules: httpfilter.HeaderMutationRules{
 					AllowExpr:       regexp.MustCompile("^(?:allow-.*)$"),
@@ -725,7 +725,7 @@ func (s) TestBuildClientInterceptor_Success(t *testing.T) {
 				server: xdsresource.GRPCServiceConfig{
 					TargetURI:       testBaseURI,
 					Timeout:         time.Second,
-					InitialMetadata: metadata.MD(metadata.Pairs("key1", "value1")),
+					InitialMetadata: `[{"key":"key1","value":"value1"}]`,
 				},
 				allowedHeaders:    []matcher.StringMatcher{matcher.NewExactStringMatcher("allow-header", false)},
 				disallowedHeaders: []matcher.StringMatcher{matcher.NewExactStringMatcher("disallow-header", false)},
