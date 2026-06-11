@@ -29,8 +29,8 @@ import (
 	v3corepb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	xdspb "github.com/envoyproxy/go-control-plane/envoy/extensions/grpc_service/channel_credentials/xds/v3"
 	"google.golang.org/grpc/internal/xds/bootstrap"
-	xdsbootstrap "google.golang.org/grpc/xds/bootstrap"
 	"google.golang.org/grpc/resolver"
+	xdsbootstrap "google.golang.org/grpc/xds/bootstrap"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )

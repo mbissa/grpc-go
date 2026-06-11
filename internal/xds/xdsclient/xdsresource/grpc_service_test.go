@@ -232,7 +232,6 @@ func TestParseGRPCServiceConfig_InvalidHeaderValueCharacters(t *testing.T) {
 	}
 }
 
-
 func TestGRPCServiceConfig_InitialMetadataOptions(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		cfg := GRPCServiceConfig{}
@@ -319,4 +318,3 @@ func TestParseGRPCServiceConfig_CallCredentials(t *testing.T) {
 		t.Errorf("token got: %q, want: %q", tokenCfg["token"], "my-access-token")
 	}
 }
-
