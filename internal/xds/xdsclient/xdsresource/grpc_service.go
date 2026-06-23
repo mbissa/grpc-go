@@ -27,10 +27,10 @@ import (
 	"time"
 
 	v3corepb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	access_tokenpb "github.com/envoyproxy/go-control-plane/envoy/extensions/grpc_service/call_credentials/access_token/v3"
 	xdspb "github.com/envoyproxy/go-control-plane/envoy/extensions/grpc_service/channel_credentials/xds/v3"
 	"google.golang.org/grpc/internal/xds/bootstrap"
 	"google.golang.org/grpc/resolver"
-	xdsbootstrap "google.golang.org/grpc/xds/bootstrap"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -190,7 +190,12 @@ func extractChannelCredentials(plugins []*anypb.Any) (bootstrap.ChannelCreds, er
 		if cred == nil {
 			continue
 		}
-		if cred.TypeUrl == "type.googleapis.com/envoy.extensions.grpc_service.channel_credentials.xds.v3.XdsCredentials" {
+		switch cred.TypeUrl {
+		case "type.googleapis.com/envoy.extensions.grpc_service.channel_credentials.insecure.v3.InsecureCredentials":
+			return bootstrap.ChannelCreds{Type: "insecure"}, nil
+		case "type.googleapis.com/envoy.extensions.grpc_service.channel_credentials.google_default.v3.GoogleDefaultCredentials":
+			return bootstrap.ChannelCreds{Type: "google_default"}, nil
+		case "type.googleapis.com/envoy.extensions.grpc_service.channel_credentials.xds.v3.XdsCredentials":
 			var xdsConfig xdspb.XdsCredentials
 			if err := anypb.UnmarshalTo(cred, &xdsConfig, proto.UnmarshalOptions{}); err != nil {
 				return bootstrap.ChannelCreds{}, fmt.Errorf("failed to unmarshal XdsCredentials: %v", err)
@@ -200,20 +205,6 @@ func extractChannelCredentials(plugins []*anypb.Any) (bootstrap.ChannelCreds, er
 				return bootstrap.ChannelCreds{}, fmt.Errorf("xds credentials missing fallback credentials")
 			}
 			return extractChannelCredentials([]*anypb.Any{fallback})
-		}
-		if builder := xdsbootstrap.GetChannelCredentialsByProtoURL(cred.TypeUrl); builder != nil {
-			msg := builder.NewProtoConfig()
-			if err := anypb.UnmarshalTo(cred, msg, proto.UnmarshalOptions{}); err != nil {
-				return bootstrap.ChannelCreds{}, fmt.Errorf("failed to unmarshal credentials configuration for %s: %v", cred.TypeUrl, err)
-			}
-			jsonConfig, err := builder.MarshalProtoConfig(msg)
-			if err != nil {
-				return bootstrap.ChannelCreds{}, fmt.Errorf("failed to marshal credentials configuration for %s: %v", cred.TypeUrl, err)
-			}
-			return bootstrap.ChannelCreds{
-				Type:   builder.Name(),
-				Config: jsonConfig,
-			}, nil
 		}
 	}
 	return bootstrap.ChannelCreds{}, fmt.Errorf("no supported channel credentials found in plugins")
@@ -225,18 +216,18 @@ func extractCallCredentials(plugins []*anypb.Any) (string, error) {
 		if cred == nil {
 			continue
 		}
-		if builder := xdsbootstrap.GetCallCredentialsByProtoURL(cred.TypeUrl); builder != nil {
-			msg := builder.NewProtoConfig()
-			if err := anypb.UnmarshalTo(cred, msg, proto.UnmarshalOptions{}); err != nil {
-				return "", fmt.Errorf("failed to unmarshal credentials configuration for %s: %v", cred.TypeUrl, err)
+		if cred.TypeUrl == "type.googleapis.com/envoy.extensions.grpc_service.call_credentials.access_token.v3.AccessTokenCredentials" {
+			var accessToken access_tokenpb.AccessTokenCredentials
+			if err := anypb.UnmarshalTo(cred, &accessToken, proto.UnmarshalOptions{}); err != nil {
+				return "", fmt.Errorf("failed to unmarshal AccessTokenCredentials: %v", err)
 			}
-			jsonConfig, err := builder.MarshalProtoConfig(msg)
-			if err != nil {
-				return "", fmt.Errorf("failed to marshal credentials configuration for %s: %v", cred.TypeUrl, err)
+			if accessToken.GetToken() == "" {
+				return "", fmt.Errorf("access token must be non-empty")
 			}
+			cfgJSON, _ := json.Marshal(map[string]string{"token": accessToken.GetToken()})
 			comps = append(comps, bootstrap.CallCredsConfig{
-				Type:   builder.Name(),
-				Config: jsonConfig,
+				Type:   "access_token",
+				Config: json.RawMessage(cfgJSON),
 			})
 		}
 	}
