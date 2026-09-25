@@ -53,6 +53,7 @@ type Config struct {
 	// channel.
 	Timeout time.Duration
 	// InitialMetadata is the metadata to add to RPCs on the side channel.
+	// It is nil for untrusted management servers.
 	InitialMetadata metadata.MD
 	// ChannelCredentials are the channel credentials to create the side
 	// channel with, paired with the identity of their source configuration.
@@ -109,11 +110,12 @@ func (c *Config) Dial(opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 // that received the resource, and sc is the configuration of the management
 // server that sent it; both must be non-nil.
 //
-// Credentials configured in the proto are honored only when the delivering
-// management server is trusted, i.e. configured with the trusted_xds_server
-// server feature. For untrusted management servers the target must be present
-// in the bootstrap allowed_grpc_services map, and the returned Config carries
-// the credentials configured there.
+// Initial metadata and credentials configured in the proto are honored only
+// when the delivering management server is trusted, i.e. configured with the
+// trusted_xds_server server feature. For untrusted management servers they
+// are ignored without being validated, the target must be present in the
+// bootstrap allowed_grpc_services map, and the returned Config carries the
+// credentials configured there.
 //
 // The credentials in the returned Config are built and ready to use. The
 // caller owns the Config and releases its credentials via Close when it is no
@@ -137,13 +139,13 @@ func Parse(gs *v3corepb.GrpcService, bc *bootstrap.Config, sc *bootstrap.ServerC
 	if cfg.Timeout, err = parseTimeout(gs); err != nil {
 		return nil, err
 	}
-	if cfg.InitialMetadata, err = parseInitialMetadata(gs.GetInitialMetadata()); err != nil {
-		return nil, err
-	}
 
-	// Credentials are built last, so that no error path can drop built
-	// credentials.
 	if sc.ServerFeaturesTrustedXDSServer() {
+		if cfg.InitialMetadata, err = parseInitialMetadata(gs.GetInitialMetadata()); err != nil {
+			return nil, err
+		}
+		// Credentials are built last, so that no error path can drop built
+		// credentials.
 		if cfg.ChannelCredentials, err = buildChannelCredentials(googleGrpc.GetChannelCredentialsPlugin(), bc); err != nil {
 			return nil, err
 		}
@@ -152,6 +154,7 @@ func Parse(gs *v3corepb.GrpcService, bc *bootstrap.Config, sc *bootstrap.ServerC
 			return nil, err
 		}
 	} else {
+		// The proto's initial metadata and credentials are ignored.
 		svc := bc.AllowedGRPCService(targetURI)
 		if svc == nil {
 			return nil, fmt.Errorf("grpcservice: target_uri %q is not present in allowed_grpc_services", targetURI)

@@ -25,6 +25,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/spiffe/go-spiffe/v2/bundle/spiffebundle"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
@@ -87,6 +88,48 @@ func GetRootsFromSPIFFEBundleMap(bundleMap map[string]*spiffebundle.Bundle, leaf
 		rootPool.AddCert(root)
 	}
 	return rootPool, nil
+}
+
+// VerifyPeerCertificateFunc returns a function, for use as
+// tls.Config.VerifyPeerCertificate, that verifies a server certificate chain
+// against the roots in bundleMap for the trust domain of the leaf
+// certificate's SPIFFE ID. If serverName is non-empty, the leaf certificate
+// must also be valid for it.
+func VerifyPeerCertificateFunc(bundleMap map[string]*spiffebundle.Bundle, serverName string) func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+	return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+		rawCertList := make([]*x509.Certificate, len(rawCerts))
+		for i, asn1Data := range rawCerts {
+			cert, err := x509.ParseCertificate(asn1Data)
+			if err != nil {
+				return fmt.Errorf("spiffe: verify function could not parse input certificate: %v", err)
+			}
+			rawCertList[i] = cert
+		}
+		if len(rawCertList) == 0 {
+			return fmt.Errorf("spiffe: verify function has no valid input certificates")
+		}
+		leafCert := rawCertList[0]
+		roots, err := GetRootsFromSPIFFEBundleMap(bundleMap, leafCert)
+		if err != nil {
+			return err
+		}
+
+		opts := x509.VerifyOptions{
+			Roots:         roots,
+			CurrentTime:   time.Now(),
+			Intermediates: x509.NewCertPool(),
+			DNSName:       serverName,
+		}
+
+		for _, cert := range rawCertList[1:] {
+			opts.Intermediates.AddCert(cert)
+		}
+		// The verified chain is (surprisingly) unused.
+		if _, err = rawCertList[0].Verify(opts); err != nil {
+			return fmt.Errorf("spiffe: x509 certificate Verify failed: %v", err)
+		}
+		return nil
+	}
 }
 
 // idFromCert parses the SPIFFE ID from the x509.Certificate. If the certificate

@@ -125,6 +125,12 @@ func googleGrpcService(target string, channelPlugins, callPlugins []*anypb.Any, 
 	}
 }
 
+// withInitialMetadata sets the initial metadata of gs and returns it.
+func withInitialMetadata(gs *v3corepb.GrpcService, headers ...*v3corepb.HeaderValue) *v3corepb.GrpcService {
+	gs.InitialMetadata = headers
+	return gs
+}
+
 // protoIdentity returns the identity of a proto plugin config.
 func protoIdentity(a *anypb.Any) xdscreds.Identity {
 	return xdscreds.Identity{Type: a.GetTypeUrl(), Data: a.GetValue()}
@@ -148,6 +154,12 @@ func (s) TestParse(t *testing.T) {
 	tokenPlugin := accessTokenPlugin(t, "test-token")
 	unsupportedCallPlugin := &anypb.Any{TypeUrl: "type.googleapis.com/unsupported.CallCredentials"}
 	allowedInsecure := `{"dns:///my-service:443":{"channel_creds":[{"type":"insecure"}]}}`
+	headers := []*v3corepb.HeaderValue{
+		{Key: "key-b", Value: "b"},
+		// raw_value takes precedence over the legacy value field.
+		{Key: "key-a", Value: "legacy", RawValue: []byte("raw-a")},
+	}
+	invalidHeader := &v3corepb.HeaderValue{Key: "grpc-key", Value: "v"}
 
 	tests := []struct {
 		name   string
@@ -266,16 +278,8 @@ func (s) TestParse(t *testing.T) {
 			wantErr: "timeout must be strictly positive",
 		},
 		{
-			name: "initial_metadata",
-			gs: func() *v3corepb.GrpcService {
-				gs := googleGrpcService(target, []*anypb.Any{insecurePlugin}, nil, nil)
-				gs.InitialMetadata = []*v3corepb.HeaderValue{
-					{Key: "key-b", Value: "b"},
-					// raw_value takes precedence over the legacy value field.
-					{Key: "key-a", Value: "legacy", RawValue: []byte("raw-a")},
-				}
-				return gs
-			}(),
+			name:   "trusted_initial_metadata",
+			gs:     withInitialMetadata(googleGrpcService(target, []*anypb.Any{insecurePlugin}, nil, nil), headers...),
 			sc:     trustedServerConfig(t),
 			config: bootstrapConfig(t, "{}"),
 			want: &Config{
@@ -283,6 +287,30 @@ func (s) TestParse(t *testing.T) {
 				InitialMetadata:    metadata.MD{"key-b": {"b"}, "key-a": {"raw-a"}},
 				ChannelCredentials: xdscreds.NewChannelCreds(nil, protoIdentity(insecurePlugin), nil),
 			},
+		},
+		{
+			name:    "trusted_invalid_initial_metadata",
+			gs:      withInitialMetadata(googleGrpcService(target, []*anypb.Any{insecurePlugin}, nil, nil), invalidHeader),
+			sc:      trustedServerConfig(t),
+			config:  bootstrapConfig(t, "{}"),
+			wantErr: "invalid header key",
+		},
+		{
+			// The proto's initial metadata is ignored along with its
+			// credentials.
+			name:   "untrusted_initial_metadata_ignored",
+			gs:     withInitialMetadata(googleGrpcService(target, []*anypb.Any{insecurePlugin}, nil, nil), headers...),
+			sc:     untrustedServerConfig(t),
+			config: bootstrapConfig(t, allowedInsecure),
+			want:   &Config{TargetURI: target, ChannelCredentials: xdscreds.NewChannelCreds(nil, xdscreds.Identity{Type: "insecure"}, nil)},
+		},
+		{
+			// Ignored initial metadata is not validated.
+			name:   "untrusted_invalid_initial_metadata_ignored",
+			gs:     withInitialMetadata(googleGrpcService(target, []*anypb.Any{insecurePlugin}, nil, nil), invalidHeader),
+			sc:     untrustedServerConfig(t),
+			config: bootstrapConfig(t, allowedInsecure),
+			want:   &Config{TargetURI: target, ChannelCredentials: xdscreds.NewChannelCreds(nil, xdscreds.Identity{Type: "insecure"}, nil)},
 		},
 	}
 
